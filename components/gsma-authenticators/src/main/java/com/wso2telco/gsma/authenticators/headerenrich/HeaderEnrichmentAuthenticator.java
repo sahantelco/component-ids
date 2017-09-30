@@ -16,6 +16,8 @@
 
 package com.wso2telco.gsma.authenticators.headerenrich;
 
+import com.wso2telco.Util;
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.core.config.DataHolder;
 import com.wso2telco.core.config.model.MobileConnectConfig;
 import com.wso2telco.core.config.service.ConfigurationService;
@@ -32,6 +34,7 @@ import com.wso2telco.ids.datapublisher.util.DataPublisherUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.infinispan.Cache;
 import org.wso2.carbon.authenticator.stub.LoginAuthenticationExceptionException;
 import org.wso2.carbon.identity.application.authentication.framework.*;
 import org.wso2.carbon.identity.application.authentication.framework.cache.AuthenticationContextCache;
@@ -253,6 +256,9 @@ public class HeaderEnrichmentAuthenticator extends AbstractApplicationAuthentica
 
         log.info("Initiating authentication request");
 
+        if(null == context){
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
         AuthenticationContextCache.getInstance().addToCache(new AuthenticationContextCacheKey(context
                 .getContextIdentifier()), new AuthenticationContextCacheEntry(context));
 
@@ -319,6 +325,9 @@ public class HeaderEnrichmentAuthenticator extends AbstractApplicationAuthentica
                                                  HttpServletResponse response, AuthenticationContext context)
             throws AuthenticationFailedException {
 
+        if(null == context){
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
         UserStatus userStatus = (UserStatus) context.getParameter(Constants.USER_STATUS_DATA_PUBLISHING_PARAM);
 
         log.info("Processing authentication response");
@@ -342,6 +351,7 @@ public class HeaderEnrichmentAuthenticator extends AbstractApplicationAuthentica
                 case Constants.USER_ACTION_REG_REJECTED:
                     //User rejected to registration consent
                     terminateAuthentication(context);
+                    Util.putContextToCache(request.getParameter(Constants.SESSION_DATA_KEY), context);
                     break;
             }
         }
@@ -397,6 +407,7 @@ public class HeaderEnrichmentAuthenticator extends AbstractApplicationAuthentica
                 }
 
                 AuthenticationContextHelper.setSubject(context, msisdn);
+                Util.putContextToCache(request.getParameter(Constants.SESSION_DATA_KEY), context);
             }
 
             String rememberMe = request.getParameter("chkRemember");

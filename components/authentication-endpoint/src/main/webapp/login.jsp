@@ -43,6 +43,8 @@
 <%@ page import="org.wso2.carbon.identity.application.authentication.framework.model.*" %>
 <%@ page import="org.wso2.carbon.identity.application.authentication.framework.util.*" %>
 <%@ page import="org.wso2.carbon.identity.application.authentication.framework.context.*" %>
+<%@ page import="com.wso2telco.cache.manager.CacheManager" %>
+<%@ page import="org.infinispan.Cache" %>
 
 <%! static Logger logger = Logger.getLogger(login_jsp.class); %>
 
@@ -124,6 +126,11 @@
 		if (cacheEntryObj != null) {
 			authnContext = ((AuthenticationContextCacheEntry) cacheEntryObj).getContext();
 		}
+
+        if(null == authnContext){
+			Cache<String, Object> cache = CacheManager.getInstance();
+			authnContext = (AuthenticationContext) cache.get(sessionDataKey);
+        }
 		String msisdn = null;
 		try {
 			msisdn = (String) authnContext.getProperty("msisdn");

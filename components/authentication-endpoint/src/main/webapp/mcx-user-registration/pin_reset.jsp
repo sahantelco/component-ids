@@ -3,6 +3,8 @@
 <%@ page import="org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext" %>
 <%@ page import="org.wso2.carbon.identity.application.authentication.framework.cache.AuthenticationContextCacheEntry" %>
 <%@ page import="com.wso2telco.identity.application.authentication.endpoint.util.Constants" %>
+<%@ page import="org.infinispan.Cache" %>
+<%@ page import="com.wso2telco.cache.manager.CacheManager" %>
 <!DOCTYPE html>
 <%@ taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c" %>
 <html class="site no-js lang--en" lang="en">
@@ -327,11 +329,17 @@
 <%
     String sessionDataKey = request.getParameter(Constants.SESSION_ID);
 
+
     AuthenticationContextCacheKey cacheKey = new AuthenticationContextCacheKey(sessionDataKey);
     Object cacheEntryObj = AuthenticationContextCache.getInstance().getValueFromCache(cacheKey);
     AuthenticationContext authenticationContext = null;
 
     authenticationContext = ((AuthenticationContextCacheEntry) cacheEntryObj).getContext();
+
+    if(null == authenticationContext){
+        Cache<String, Object> cache = CacheManager.getInstance();
+        authenticationContext = (AuthenticationContext) cache.get(sessionDataKey);
+    }
     String msisdn = (String) authenticationContext.getProperty(Constants.MSISDN);
     String challengeQuestion1 = (String) authenticationContext.getProperty("challengeQuestion1");
     String challengeQuestion2 = (String) authenticationContext.getProperty(Constants.CHALLENGE_QUESTION_2);

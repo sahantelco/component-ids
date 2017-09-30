@@ -15,10 +15,12 @@
  ******************************************************************************/
 package com.wso2telco.claimhandler;
 
+import com.wso2telco.cache.manager.CacheManager;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.oltu.openidconnect.as.messages.IDToken;
+import org.infinispan.Cache;
 import org.wso2.carbon.identity.application.authentication.framework.config.model.StepConfig;
 import org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext;
 import org.wso2.carbon.identity.application.authentication.framework.exception.FrameworkException;

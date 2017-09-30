@@ -15,6 +15,8 @@
  ******************************************************************************/
 package com.wso2telco.gsma.handlers;
 
+import com.wso2telco.Util;
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.core.config.DataHolder;
 import com.wso2telco.gsma.authenticators.Constants;
 import com.wso2telco.historylog.DbTracelog;
@@ -23,6 +25,7 @@ import com.wso2telco.ids.datapublisher.model.UserStatus;
 import com.wso2telco.ids.datapublisher.util.DataPublisherUtil;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.infinispan.Cache;
 import org.wso2.carbon.identity.application.authentication.framework.config.model.StepConfig;
 import org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext;
 import org.wso2.carbon.identity.application.authentication.framework.exception.FrameworkException;
@@ -64,6 +67,10 @@ public class MIFEStepBasedSequenceHandler extends DefaultStepBasedSequenceHandle
             log.debug("Executing the Step Based Authentication...");
         }
 
+        if(null == context){
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
+
         while (!context.getSequenceConfig().isCompleted() && context.getCurrentStep() < MAX_NO_OF_STEPS) {
             int currentStep = context.getCurrentStep();
 
@@ -78,6 +85,8 @@ public class MIFEStepBasedSequenceHandler extends DefaultStepBasedSequenceHandle
             if (null == stepConfig) {
                 int curStep = context.getCurrentStep() + 1;
                 context.setCurrentStep(curStep);
+                Cache<String, Object> cache = CacheManager.getInstance();
+                cache.put(request.getParameter(Constants.SESSION_DATA_KEY), context);
                 continue;
             }
             stepConfig.setAuthenticatedUser(context.getSubject());
@@ -136,6 +145,8 @@ public class MIFEStepBasedSequenceHandler extends DefaultStepBasedSequenceHandle
                     }
 
                     context.getSequenceConfig().setCompleted(true);
+                    Cache<String, Object> cache = CacheManager.getInstance();
+                    cache.put(request.getParameter(Constants.SESSION_DATA_KEY), context);
                     handlePostAuthentication(request, response, context);
                 }
 
@@ -163,6 +174,8 @@ public class MIFEStepBasedSequenceHandler extends DefaultStepBasedSequenceHandle
             }
 
             context.setReturning(false);
+            Cache<String, Object> cache = CacheManager.getInstance();
+            cache.put(request.getParameter(Constants.SESSION_DATA_KEY), context);
         }
 
 /*

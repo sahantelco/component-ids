@@ -18,6 +18,7 @@ package com.wso2telco;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.core.config.MIFEAuthentication;
 import com.wso2telco.core.config.model.MobileConnectConfig;
 import com.wso2telco.core.config.model.PinConfig;
@@ -40,6 +41,7 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.infinispan.Cache;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.wso2.carbon.authenticator.stub.LoginAuthenticationExceptionException;
@@ -51,14 +53,7 @@ import org.wso2.carbon.identity.application.authentication.framework.exception.A
 import org.wso2.carbon.identity.mgt.stub.UserIdentityManagementAdminServiceIdentityMgtServiceExceptionException;
 import org.wso2.carbon.um.ws.api.stub.RemoteUserStoreManagerServiceUserStoreExceptionException;
 
-import javax.ws.rs.Consumes;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
+import javax.ws.rs.*;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
@@ -71,7 +66,9 @@ import java.sql.Date;
 import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -86,8 +83,39 @@ import java.util.logging.Logger;
 @Path("/endpoint")
 public class Endpoints {
 
+    /**
+     * constant for the first attempt in LOA3 flow
+     */
+    private static final int FIRST_ATTEMPT = 1;
     private static boolean temp = false;
-
+    /**
+     * The log.
+     */
+    private static Log log = LogFactory.getLog(Endpoints.class);
+    /**
+     * The ussd no of attempts.
+     */
+    private static Map<String, Integer> ussdNoOfAttempts = new HashMap<String, Integer>();
+    /**
+     * The Configuration service
+     */
+    private static ConfigurationService configurationService = new ConfigurationServiceImpl();
+    /**
+     * The success response.
+     */
+    String successResponse = "\"" + "amountTransaction" + "\"";
+    /**
+     * The service exception.
+     */
+    String serviceException = "\"" + "serviceException" + "\"";
+    /**
+     * The policy exception.
+     */
+    String policyException = "\"" + "policyException" + "\"";
+    /**
+     * The error return.
+     */
+    String errorReturn = "\"" + "errorreturn" + "\"";
     /**
      * The context.
      */
@@ -96,51 +124,106 @@ public class Endpoints {
     private UriInfo context;
 
     /**
-     * The success response.
-     */
-    String successResponse = "\"" + "amountTransaction" + "\"";
-
-    /**
-     * The service exception.
-     */
-    String serviceException = "\"" + "serviceException" + "\"";
-
-    /**
-     * The policy exception.
-     */
-    String policyException = "\"" + "policyException" + "\"";
-
-    /**
-     * The error return.
-     */
-    String errorReturn = "\"" + "errorreturn" + "\"";
-
-    /**
-     * The log.
-     */
-    private static Log log = LogFactory.getLog(Endpoints.class);
-
-    /**
-     * The ussd no of attempts.
-     */
-    private static Map<String, Integer> ussdNoOfAttempts = new HashMap<String, Integer>();
-
-    /**
-     * constant for the first attempt in LOA3 flow
-     */
-    private static final int FIRST_ATTEMPT = 1;
-
-    /**
-     * The Configuration service
-     */
-    private static ConfigurationService configurationService = new ConfigurationServiceImpl();
-
-    /**
      * Instantiates a new endpoints.
      */
     public Endpoints() {
 
 
+    }
+
+    private static USSDRequest getUssdContinueRequest(String msisdn, String sessionID, String ussdSessionID, String
+            action) {
+
+        USSDRequest req = new USSDRequest();
+
+        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
+        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
+        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getShortCode());
+        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getKeyword());
+        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
+
+        outboundUSSDMessageRequest.setOutboundUSSDMessage(configurationService.getDataHolder().getMobileConnectConfig
+                ().getUssdConfig().getPinConfirmMessage());
+
+        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
+
+        ResponseRequest responseRequest = new ResponseRequest();
+
+        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
+                .getPinRegistrationNotifyUrl());
+        responseRequest.setCallbackData("");
+
+        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
+
+
+        outboundUSSDMessageRequest.setUssdAction(action);
+        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
+        return req;
+    }
+
+    private static USSDRequest getUssdRequest(String msisdn, String sessionID, String ussdSessionID,
+                                              String action, String message) {
+
+        USSDRequest req = new USSDRequest();
+
+        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
+        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
+        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getShortCode());
+        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getKeyword());
+        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
+
+        outboundUSSDMessageRequest.setOutboundUSSDMessage(message);
+
+        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
+
+        ResponseRequest responseRequest = new ResponseRequest();
+
+        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
+                .getRegistrationNotifyUrl());
+        responseRequest.setCallbackData("");
+
+        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
+
+
+        outboundUSSDMessageRequest.setUssdAction(action);
+        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
+        return req;
+    }
+
+    private static USSDRequest getUssdInvalidFormatRequest(String msisdn, String sessionID, String ussdSessionID,
+                                                           String action) {
+
+        USSDRequest req = new USSDRequest();
+
+        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
+        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
+        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getShortCode());
+        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
+                .getUssdConfig().getKeyword());
+        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
+
+        outboundUSSDMessageRequest.setOutboundUSSDMessage(configurationService.getDataHolder().getMobileConnectConfig
+                ().getUssdConfig().getPinInvalidFormatMessage());
+
+        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
+
+        ResponseRequest responseRequest = new ResponseRequest();
+
+        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
+                .getPinRegistrationNotifyUrl());
+        responseRequest.setCallbackData("");
+
+        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
+
+
+        outboundUSSDMessageRequest.setUssdAction(action);
+        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
+        return req;
     }
 
     @POST
@@ -499,6 +582,15 @@ public class Endpoints {
         String sessionId = authenticationDetails.getSessionId();
         AuthenticationContext authenticationContext = getAuthenticationContext(sessionId);
 
+        if (null == authenticationContext) {
+
+            Cache<String, Object> cache = CacheManager.getInstance();
+            if (cache == null) {
+                log.error("Cache is null");
+            } else {
+                authenticationContext = (AuthenticationContext) cache.get(sessionId);
+            }
+        }
         if (StringUtils.isEmpty(authenticationDetails.getChallengeQuestion1()) ||
                 StringUtils.isEmpty(authenticationDetails.getChallengeQuestion2()) ||
                 StringUtils.isEmpty(authenticationDetails.getChallengeAnswer1()) ||
@@ -865,7 +957,6 @@ public class Endpoints {
         return responseString;
     }
 
-
     /**
      * Validate pin.
      *
@@ -1024,7 +1115,6 @@ public class Endpoints {
         }
         return Response.status(responseCode).entity(responseString).build();
     }
-
 
     /**
      * User status.
@@ -1221,7 +1311,7 @@ public class Endpoints {
             DatabaseUtils.updateStatus(sessionID, "APPROVED");
             status = "APPROVED";
             responseString = " You are successfully authenticated via mobile-connect";
-            userState=DataPublisherUtil.UserState.SMS_URL_AUTH_SUCCESS;
+            userState = DataPublisherUtil.UserState.SMS_URL_AUTH_SUCCESS;
         } else if (userStatus.equalsIgnoreCase("EXPIRED")) {
             status = "EXPIRED";
             responseString = " Your token is expired";
@@ -1237,7 +1327,7 @@ public class Endpoints {
         AuthenticationContext authenticationContext = getAuthenticationContext(sessionID);
         DataPublisherUtil.updateAndPublishUserStatus(
                 (UserStatus) authenticationContext.getParameter(Constants.USER_STATUS_DATA_PUBLISHING_PARAM),
-                userState, "SMS URL "+status);
+                userState, "SMS URL " + status);
         return Response.status(200).entity(responseString).build();
     }
 
@@ -1345,101 +1435,6 @@ public class Endpoints {
         return null;
     }
 
-    private static USSDRequest getUssdContinueRequest(String msisdn, String sessionID, String ussdSessionID, String
-            action) {
-
-        USSDRequest req = new USSDRequest();
-
-        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
-        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
-        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getShortCode());
-        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getKeyword());
-        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
-
-        outboundUSSDMessageRequest.setOutboundUSSDMessage(configurationService.getDataHolder().getMobileConnectConfig
-                ().getUssdConfig().getPinConfirmMessage());
-
-        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
-
-        ResponseRequest responseRequest = new ResponseRequest();
-
-        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
-                .getPinRegistrationNotifyUrl());
-        responseRequest.setCallbackData("");
-
-        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
-
-
-        outboundUSSDMessageRequest.setUssdAction(action);
-        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
-        return req;
-    }
-
-    private static USSDRequest getUssdRequest(String msisdn, String sessionID, String ussdSessionID,
-                                              String action, String message) {
-
-        USSDRequest req = new USSDRequest();
-
-        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
-        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
-        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getShortCode());
-        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getKeyword());
-        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
-
-        outboundUSSDMessageRequest.setOutboundUSSDMessage(message);
-
-        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
-
-        ResponseRequest responseRequest = new ResponseRequest();
-
-        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
-                .getRegistrationNotifyUrl());
-        responseRequest.setCallbackData("");
-
-        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
-
-
-        outboundUSSDMessageRequest.setUssdAction(action);
-        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
-        return req;
-    }
-
-    private static USSDRequest getUssdInvalidFormatRequest(String msisdn, String sessionID, String ussdSessionID,
-                                                           String action) {
-
-        USSDRequest req = new USSDRequest();
-
-        OutboundUSSDMessageRequest outboundUSSDMessageRequest = new OutboundUSSDMessageRequest();
-        outboundUSSDMessageRequest.setAddress("tel:+" + msisdn);
-        outboundUSSDMessageRequest.setShortCode(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getShortCode());
-        outboundUSSDMessageRequest.setKeyword(configurationService.getDataHolder().getMobileConnectConfig()
-                .getUssdConfig().getKeyword());
-        outboundUSSDMessageRequest.setSessionID(ussdSessionID);
-
-        outboundUSSDMessageRequest.setOutboundUSSDMessage(configurationService.getDataHolder().getMobileConnectConfig
-                ().getUssdConfig().getPinInvalidFormatMessage());
-
-        outboundUSSDMessageRequest.setClientCorrelator(sessionID);
-
-        ResponseRequest responseRequest = new ResponseRequest();
-
-        responseRequest.setNotifyURL(configurationService.getDataHolder().getMobileConnectConfig().getUssdConfig()
-                .getPinRegistrationNotifyUrl());
-        responseRequest.setCallbackData("");
-
-        outboundUSSDMessageRequest.setResponseRequest(responseRequest);
-
-
-        outboundUSSDMessageRequest.setUssdAction(action);
-        req.setOutboundUSSDMessageRequest(outboundUSSDMessageRequest);
-        return req;
-    }
-
     protected USSDRequest getPinUssdRequest(String msisdn, String sessionID) {
         MobileConnectConfig.USSDConfig ussdConfig = configurationService.getDataHolder().getMobileConnectConfig()
                 .getUssdConfig();
@@ -1499,32 +1494,36 @@ public class Endpoints {
      * @param jsonBody value of the request input.
      * @return Json string with status.
      */
-    @POST @Path("smsotp/send") @Consumes("application/json") @Produces("application/json") public Response validateSMSOTP(
+    @POST
+    @Path("smsotp/send")
+    @Consumes("application/json")
+    @Produces("application/json")
+    public Response validateSMSOTP(
             String jsonBody) {
         String response = null;
-        int statusCode=Response.Status.BAD_REQUEST.getStatusCode();
+        int statusCode = Response.Status.BAD_REQUEST.getStatusCode();
         log.info("Received OTP SMS from client " + jsonBody);
         org.json.JSONObject jsonObj = new org.json.JSONObject(jsonBody);
         String session_id = jsonObj.getString("session_id");
         String otp = jsonObj.getString("otp");
         try {
-            DataPublisherUtil.UserState userState=null;
-            String state="failed";
+            DataPublisherUtil.UserState userState = null;
+            String state = "failed";
             String smsotp = DatabaseUtils.getSMSOTP(session_id);
-            if (smsotp!=null && smsotp.equalsIgnoreCase(otp)) {
+            if (smsotp != null && smsotp.equalsIgnoreCase(otp)) {
                 DatabaseUtils.updateStatus(session_id, "Approved");
-                statusCode=Response.Status.OK.getStatusCode();
-                userState=DataPublisherUtil.UserState.SMS_OTP_AUTH_SUCCESS;
-                state="success";
-            }else{
+                statusCode = Response.Status.OK.getStatusCode();
+                userState = DataPublisherUtil.UserState.SMS_OTP_AUTH_SUCCESS;
+                state = "success";
+            } else {
                 DatabaseUtils.updateStatus(session_id, "Rejected");
-                statusCode=Response.Status.FORBIDDEN.getStatusCode();
-                userState=DataPublisherUtil.UserState.SMS_OTP_AUTH_FAIL;
+                statusCode = Response.Status.FORBIDDEN.getStatusCode();
+                userState = DataPublisherUtil.UserState.SMS_OTP_AUTH_FAIL;
             }
             AuthenticationContext authenticationContext = getAuthenticationContext(session_id);
             DataPublisherUtil.updateAndPublishUserStatus(
                     (UserStatus) authenticationContext.getParameter(Constants.USER_STATUS_DATA_PUBLISHING_PARAM),
-                    userState, "SMS OTP "+state);
+                    userState, "SMS OTP " + state);
         } catch (SQLException e) {
             log.error("Error occurred while updating sms otp status", e);
         }

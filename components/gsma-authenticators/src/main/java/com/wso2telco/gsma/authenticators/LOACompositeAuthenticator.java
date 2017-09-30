@@ -16,6 +16,7 @@
 package com.wso2telco.gsma.authenticators;
 
 import com.wso2telco.Util;
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.core.config.DataHolder;
 import com.wso2telco.core.config.MIFEAuthentication;
 import com.wso2telco.core.config.model.ScopeParam;
@@ -29,6 +30,7 @@ import com.wso2telco.ids.datapublisher.util.DataPublisherUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.infinispan.Cache;
 import org.wso2.carbon.identity.application.authentication.framework.ApplicationAuthenticator;
 import org.wso2.carbon.identity.application.authentication.framework.AuthenticatorFlowStatus;
 import org.wso2.carbon.identity.application.authentication.framework.LocalApplicationAuthenticator;
@@ -106,6 +108,9 @@ public class LOACompositeAuthenticator implements ApplicationAuthenticator,
                                            HttpServletResponse response, AuthenticationContext context)
             throws AuthenticationFailedException, LogoutFailedException {
         boolean dataPublisherEnabled = DataHolder.getInstance().getMobileConnectConfig().getDataPublisher().isEnabled();
+
+        String sessionKey = request.getParameter(Constants.SESSION_DATA_KEY);
+        Cache<String, Object> cache = CacheManager.getInstance();
 
         // set context current LOA
         context.setProperty(Constants.SELECTED_LOA, request.getParameter(Constants.PARAM_ACR));
@@ -332,6 +337,12 @@ public class LOACompositeAuthenticator implements ApplicationAuthenticator,
             context.setProperty(Constants.AUTH_ENDPOINT_DATA_PUBLISHING_PARAM,
                     DataPublisherUtil.getAuthMapWithInitialData(request, context));
         }
+        if(cache == null){
+            log.error("Cache is null");
+        } else {
+            cache.put(sessionKey, context);
+        }
+
         return AuthenticatorFlowStatus.SUCCESS_COMPLETED;
     }
 

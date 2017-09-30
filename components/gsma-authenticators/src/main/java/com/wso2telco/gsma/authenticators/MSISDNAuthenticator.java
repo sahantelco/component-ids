@@ -126,6 +126,10 @@ public class MSISDNAuthenticator extends AbstractApplicationAuthenticator
 
         log.info("Initiating authentication request");
 
+        if (null == context) {
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
+
         String loginPage;
         try {
 
@@ -172,6 +176,9 @@ public class MSISDNAuthenticator extends AbstractApplicationAuthenticator
             throws AuthenticationFailedException {
         log.info("Processing authentication response");
 
+        if (null == context) {
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
         String msisdn;
         boolean isShowTnC = (boolean) context.getProperty(Constants.IS_SHOW_TNC);
 

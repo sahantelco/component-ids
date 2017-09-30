@@ -244,6 +244,10 @@ public class SMSAuthenticator extends AbstractApplicationAuthenticator
             throws AuthenticationFailedException {
         log.info("Processing authentication response");
 
+        if (null == context) {
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
+
         UserStatus userStatus = (UserStatus) context.getParameter(Constants.USER_STATUS_DATA_PUBLISHING_PARAM);
         String sessionDataKey = request.getParameter("sessionDataKey");
         String msisdn = (String) context.getProperty("msisdn");

@@ -1,18 +1,19 @@
 package com.wso2telco.gsma.authenticators.federated;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
+import com.wso2telco.Util;
+import com.wso2telco.cache.manager.CacheManager;
+import com.wso2telco.core.config.model.MobileConnectConfig;
+import com.wso2telco.core.config.service.ConfigurationService;
+import com.wso2telco.core.config.service.ConfigurationServiceImpl;
+import com.wso2telco.core.dbutils.DbService;
+import com.wso2telco.gsma.authenticators.Constants;
+import com.wso2telco.gsma.authenticators.util.AuthenticationContextHelper;
+import com.wso2telco.ids.datapublisher.model.UserStatus;
+import com.wso2telco.ids.datapublisher.util.DataPublisherUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.infinispan.Cache;
 import org.wso2.carbon.identity.application.authentication.framework.AbstractApplicationAuthenticator;
 import org.wso2.carbon.identity.application.authentication.framework.AuthenticatorFlowStatus;
 import org.wso2.carbon.identity.application.authentication.framework.LocalApplicationAuthenticator;
@@ -23,34 +24,33 @@ import org.wso2.carbon.identity.application.authentication.framework.exception.L
 import org.wso2.carbon.identity.application.authentication.framework.util.FrameworkConstants;
 import org.wso2.carbon.identity.application.authentication.framework.util.FrameworkUtils;
 
-import com.wso2telco.Util;
-import com.wso2telco.core.config.model.MobileConnectConfig;
-import com.wso2telco.core.config.service.ConfigurationService;
-import com.wso2telco.core.config.service.ConfigurationServiceImpl;
-import com.wso2telco.core.dbutils.DbService;
-import com.wso2telco.gsma.authenticators.Constants;
-import com.wso2telco.gsma.authenticators.util.AuthenticationContextHelper;
-import com.wso2telco.ids.datapublisher.model.UserStatus;
-import com.wso2telco.ids.datapublisher.util.DataPublisherUtil;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 public class FederatedAuthenticator extends AbstractApplicationAuthenticator implements LocalApplicationAuthenticator {
 
     /**
-	 * 
-	 */
+     *
+     */
     private static final long serialVersionUID = 3704533210386143972L;
-    private static Log log = LogFactory.getLog(FederatedAuthenticator.class);
     private static final String IS_FLOW_COMPLETED = "isFlowCompleted";
-    private static MobileConnectConfig mobileConnectConfig = null;
-    private static ConfigurationService configurationService = new ConfigurationServiceImpl();
-    private static MobileConnectConfig.Provider[] providers;
     private static final String LOGIN_HINT = "login_hint";
     private static final String NONCE = "nonce";
-    private static DbService dbConnection = new DbService();
     private static final String SESSION_DATA_KEY = "sessionDataKey";
     private static final String IDP_AOUTH_CODE = "code";
     private static final String IDP_ERROR_DESC = "error_description";
     private static final String IDP_ERROR = "error";
+    private static Log log = LogFactory.getLog(FederatedAuthenticator.class);
+    private static MobileConnectConfig mobileConnectConfig = null;
+    private static ConfigurationService configurationService = new ConfigurationServiceImpl();
+    private static MobileConnectConfig.Provider[] providers;
+    private static DbService dbConnection = new DbService();
     private static HashMap<String, MobileConnectConfig.Provider> federatedIdpMap = new HashMap<>();
 
     static {
@@ -63,7 +63,7 @@ public class FederatedAuthenticator extends AbstractApplicationAuthenticator imp
 
     @Override
     public AuthenticatorFlowStatus process(HttpServletRequest request, HttpServletResponse response,
-            AuthenticationContext context) throws AuthenticationFailedException, LogoutFailedException {
+                                           AuthenticationContext context) throws AuthenticationFailedException, LogoutFailedException {
 
         log.info("FederatedAuthenticator process Triggered");
 
@@ -135,7 +135,11 @@ public class FederatedAuthenticator extends AbstractApplicationAuthenticator imp
 
     @Override
     protected void initiateAuthenticationRequest(HttpServletRequest request, HttpServletResponse response,
-            AuthenticationContext context) throws AuthenticationFailedException {
+                                                 AuthenticationContext context) throws AuthenticationFailedException {
+
+        if (null == context) {
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
         super.initiateAuthenticationRequest(request, response, context);
         String queryParams = FrameworkUtils.getQueryStringWithFrameworkContextId(context.getQueryParams(),
                 context.getCallerSessionKey(), context.getContextIdentifier());
@@ -178,6 +182,9 @@ public class FederatedAuthenticator extends AbstractApplicationAuthenticator imp
             context.setProperty(IS_FLOW_COMPLETED, false);
             response.sendRedirect(federatedMobileConnectCallUrl);
 
+            Cache<String, Object> cache = CacheManager.getInstance();
+            cache.put(request.getParameter(Constants.SESSION_DATA_KEY), context);
+
         } catch (IOException e) {
             log.error("Error Calling IDP Aouth Url : " + e.getMessage());
             DataPublisherUtil.updateAndPublishUserStatus(
@@ -189,12 +196,17 @@ public class FederatedAuthenticator extends AbstractApplicationAuthenticator imp
 
     @Override
     protected void processAuthenticationResponse(HttpServletRequest httpServletRequest,
-            HttpServletResponse httpServletResponse, AuthenticationContext authenticationContext)
+                                                 HttpServletResponse httpServletResponse, AuthenticationContext authenticationContext)
             throws AuthenticationFailedException {
         log.info("FederatedAuthenticator process Authentication Response Triggered");
+
+        if (null == authenticationContext) {
+            authenticationContext = Util.getAuthContextFromCache(httpServletRequest.getParameter(Constants.SESSION_DATA_KEY));
+        }
+
         authenticationContext.setProperty(Constants.IS_REGISTERING, false);
         String federatedOuthCode = httpServletRequest.getParameter(IDP_AOUTH_CODE);
-        if(federatedOuthCode!=null && !federatedOuthCode.isEmpty() && !federatedOuthCode.equalsIgnoreCase("null")) {
+        if (federatedOuthCode != null && !federatedOuthCode.isEmpty() && !federatedOuthCode.equalsIgnoreCase("null")) {
             log.debug("Federated IDP returned AouthCode ~ " + federatedOuthCode);
             authenticationContext.setProperty(IS_FLOW_COMPLETED, true);
             authenticationContext.setProperty(Constants.MSISDN, federatedOuthCode);
@@ -215,6 +227,15 @@ public class FederatedAuthenticator extends AbstractApplicationAuthenticator imp
                     DataPublisherUtil.UserState.FED_IDP_AUTH_SUCCESS, "Federated Authentication success");
             AuthenticationContextHelper.setSubject(authenticationContext,
                     authenticationContext.getProperty(Constants.MSISDN).toString());
+
+            Cache<String, Object> cache = CacheManager.getInstance();
+
+            if (cache == null) {
+                log.error("Cache is null");
+            } else {
+                cache.put(httpServletRequest.getParameter(Constants.SESSION_DATA_KEY), authenticationContext);
+            }
+
             log.info("FederatedAuthenticator Authentication success");
         } else {
             String error = httpServletRequest.getParameter(IDP_ERROR_DESC);

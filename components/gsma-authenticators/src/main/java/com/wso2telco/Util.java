@@ -1,8 +1,10 @@
 package com.wso2telco;
 
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.core.config.model.MobileConnectConfig;
 import com.wso2telco.core.config.service.ConfigurationService;
 import com.wso2telco.core.config.service.ConfigurationServiceImpl;
+import com.wso2telco.gsma.authenticators.Constants;
 import com.wso2telco.gsma.authenticators.util.BasicFutureCallback;
 import com.wso2telco.gsma.manager.client.ClaimManagementClient;
 import com.wso2telco.gsma.manager.client.LoginAdminServiceClient;
@@ -12,11 +14,14 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.infinispan.Cache;
 import org.wso2.carbon.authenticator.stub.LoginAuthenticationExceptionException;
+import org.wso2.carbon.identity.application.authentication.framework.context.AuthenticationContext;
 import org.wso2.carbon.identity.application.authentication.framework.exception.AuthenticationFailedException;
 import org.wso2.carbon.um.ws.api.stub.RemoteUserStoreManagerServiceUserStoreExceptionException;
 import org.wso2.carbon.user.api.UserStoreException;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.rmi.RemoteException;
 import java.util.HashMap;
@@ -40,7 +45,7 @@ public class Util {
         int socketTimeout = 60000;
         int connectTimeout = 60000;
         int connectionRequestTimeout = 30000;
-        CloseableHttpClient client=null;
+        CloseableHttpClient client = null;
         try {
             MobileConnectConfig.TimeoutConfig timeoutConfig = configurationService.getDataHolder()
                     .getMobileConnectConfig().getUssdConfig().getTimeoutConfig();
@@ -55,10 +60,10 @@ public class Util {
 
             log.debug("Error in reading TimeoutConfig:using default timeouts:"
                     + e);
-        }finally {
-            try{
+        } finally {
+            try {
                 client.close();
-            }catch (Exception e){
+            } catch (Exception e) {
 
             }
         }
@@ -115,6 +120,22 @@ public class Util {
             return false;
         }
 
+    }
+
+    public static AuthenticationContext getAuthContextFromCache(String sessionId) {
+        Cache<String, Object> cache = CacheManager.getInstance();
+        if(cache == null){
+            log.error("Cache is null");
+        }
+        return  (AuthenticationContext) cache.get(sessionId);
+    }
+
+    public static void putContextToCache(String sessionKey, AuthenticationContext context){
+        Cache<String, Object> cache = CacheManager.getInstance();
+        if(cache == null){
+            log.error("putting to cache. Cache is null");
+        }
+        cache.put(sessionKey, context);
     }
 
 

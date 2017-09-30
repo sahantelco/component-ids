@@ -15,6 +15,8 @@
  ******************************************************************************/
 package com.wso2telco.gsma.handlers.authenticationstephandler;
 
+import com.wso2telco.Util;
+import com.wso2telco.cache.manager.CacheManager;
 import com.wso2telco.gsma.authenticators.BaseApplicationAuthenticator;
 import com.wso2telco.gsma.authenticators.Constants;
 import com.wso2telco.gsma.authenticators.LOACompositeAuthenticator;
@@ -278,6 +280,9 @@ public class MIFEAuthenticationStepHandler extends DefaultStepHandler {
             throws FrameworkException {
 
         log.info("Do authentication...");
+        if(null == context){
+            context = Util.getAuthContextFromCache(request.getParameter(Constants.SESSION_DATA_KEY));
+        }
 
         SequenceConfig sequenceConfig = context.getSequenceConfig();
         int currentStep = context.getCurrentStep();
@@ -388,6 +393,7 @@ public class MIFEAuthenticationStepHandler extends DefaultStepHandler {
                 }
 
                 setAuthenticationAttributes(context, stepConfig, authenticatorConfig);
+                Util.putContextToCache(request.getParameter(Constants.SESSION_DATA_KEY), context);
             }
 
         } catch (AuthenticationFailedException e) {
@@ -434,11 +440,13 @@ public class MIFEAuthenticationStepHandler extends DefaultStepHandler {
                         context.getSequenceConfig().setCompleted(true);
                     }
                 }
+                Util.putContextToCache(request.getParameter(Constants.SESSION_DATA_KEY), context);
             } catch (NullPointerException e1) {
                 // Possible exception during dashboard login
                 removeAllFollowingSteps(context, currentStep);
                 context.setRequestAuthenticated(false);
                 context.getSequenceConfig().setCompleted(true);
+                Util.putContextToCache(request.getParameter(Constants.SESSION_DATA_KEY), context);
             }
         } catch (LogoutFailedException e) {
             throw new FrameworkException(e.getMessage(), e);
